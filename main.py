@@ -55,6 +55,27 @@ def main():
             print(f"Error running checks: {e}")
             print("Tip: Ensure you ran Step 1 first to populate the DB.")
 
+    # Step 3: Pre-Analysis (Means)
+    elif args.step == 3:
+        print("Step 3: Calculating Means across Brands...")
+        from backend.pre_analysis import compute_brand_means
+        # Demo: passing study_id=1. In prod, pass via args.
+        try:
+            compute_brand_means(study_id=1)
+            print("Step 3 Complete. Means stored in 'preanalysis_results'.")
+        except Exception as e:
+            print(f"Error in Step 3: {e}")
+
+    # Step 4: Correlations
+    elif args.step == 4:
+        print("Step 4: Running Correlation Analysis...")
+        from backend.analytics import run_correlation_analysis
+        try:
+            run_correlation_analysis(study_id=1)
+            print("Step 4 Complete. Correlations stored and Heatmap generated.")
+        except Exception as e:
+            print(f"Error in Step 4: {e}")
+
     else:
         print("Step not yet implemented or invalid step.")
 

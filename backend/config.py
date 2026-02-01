@@ -15,6 +15,9 @@ class Config:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATA_DIR = os.path.join(BASE_DIR, 'sample_data')
     OUTPUT_DIR = os.path.join(BASE_DIR, 'outputs')
+    CHARTS_DIR = os.path.join(OUTPUT_DIR, 'charts')
     
     # SOW Analysis Settings
     SOW_MODEL_NAME = 'all-MiniLM-L6-v2'  # Lightweight efficient transformer model
+
+config = Config()

@@ -42,7 +42,7 @@ def load_spss_to_db(file_path: str, study_name: str):
     # OR map it to the 'raw_responses' EAV table.
     # To keep it essentially 'pandas-ready', dumping to a dedicated table is often easier for Analytics.
     
-    table_name = f"raw_data_{study_id}"
+    table_name = "responses"
     df.to_sql(table_name, engine, if_exists='replace', index=False)
     
     print(f"Data successfully saved to table '{table_name}'.")
