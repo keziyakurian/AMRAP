@@ -1,105 +1,62 @@
 import argparse
-from backend.ingestion import load_spss_to_db
-from backend.data_checks import DataChecker
-from backend.database import init_db
+from backend.ingestion.spss_loader import load_spss
+from backend.checks.audit_runner import run_audit
+from backend.preanalysis.means import compute_means
+from backend.analysis.correlations import compute_correlations
+from backend.analysis.factors import run_factor_analysis
+from backend.modeling.run_r_model import run_r
+from backend.outputs.excel_writer import write_excel
+from backend.outputs.ppt_writer import write_ppt
 
-def main():
-    parser = argparse.ArgumentParser(description="AMRAP: Automated Market Research Analytics Pipeline")
-    parser.add_argument('--step', type=int, choices=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], help="Step to run")
-    parser.add_argument('--file', type=str, help="Path to input file (for Step 1)")
-    parser.add_argument('--study_name', type=str, default="Test_Study", help="Name of the study")
-    
-    args = parser.parse_args()
-
-    # Step 0: Setup (implicitly handled by imports usually, but explicit here)
-    if args.step == 0:
-        print("Initializing Database...")
-        init_db()
-        print("Database initialized.")
-
+def run_pipeline(step=None, file_path=None):
     # Step 1: Ingestion
-    elif args.step == 1:
-        if not args.file:
-            print("Error: --file is required for Step 1")
+    if step == 1 or step is None:
+        if file_path:
+            df = load_spss(file_path)
+            # If running full pipeline, we pass df to next step?
+            # Or reliance on DB state.
+            # For "run all", ideally we execute sequentially.
+            if step is None:
+                run_audit(df)
+        else:
+            print("File path required for Step 1.")
             return
-        study_id, table_name = load_spss_to_db(args.file, args.study_name)
-        print(f"Step 1 Complete. Study ID: {study_id}, raw data in {table_name}")
 
     # Step 2: Checks
-    elif args.step == 2:
-        # For demo purposes, we connect to the most recent study or generic table
-        # We assume table name format 'raw_data_{id}' or pass it explicitly.
-        # Here we just hardcode/find one for the demo logic.
-        print("Running Data Checks...")
-        
-        # Example: Let's assume we are checking the last inserted study
-        # In prod: fetch from DB or args.
-        table_name = "raw_data_1" # Placeholder
-        
-        try:
-            checker = DataChecker(study_id=1, table_name=table_name)
-            
-            # Define SOW requirements (Simulated input from SOW document)
-            sow_requirements = [
-                "Unaided Brand Awareness",
-                "Tom of Mind Awareness",
-                "Brand Consideration",
-                "Purchase Intent",
-                "Demographics: Age and Gender",
-                "Net Promoter Score"
-            ]
-            
-            checker.run_all_checks(sow_requirements)
-            print("Step 2 Complete. Checks logged to DB.")
-        except Exception as e:
-            print(f"Error running checks: {e}")
-            print("Tip: Ensure you ran Step 1 first to populate the DB.")
+    if step == 2:
+        # We need to load DF from DB or re-ingest?
+        # For simplicity, let's assume Ingestion populated DB.
+        # But audit_runner expects DF to check structure/columns.
+        from backend.db import engine
+        import pandas as pd
+        df = pd.read_sql("SELECT * FROM responses", engine)
+        run_audit(df)
 
-    # Step 3: Pre-Analysis (Means)
-    elif args.step == 3:
-        print("Step 3: Calculating Means across Brands...")
-        from backend.pre_analysis import compute_brand_means
-        # Demo: passing study_id=1. In prod, pass via args.
-        try:
-            compute_brand_means(study_id=1)
-            print("Step 3 Complete. Means stored in 'preanalysis_results'.")
-        except Exception as e:
-            print(f"Error in Step 3: {e}")
+    # Step 3: Means
+    if step == 3 or step is None:
+        compute_means()
 
     # Step 4: Correlations
-    elif args.step == 4:
-        print("Step 4: Running Correlation Analysis...")
-        from backend.analytics import run_correlation_analysis
-        try:
-            run_correlation_analysis(study_id=1)
-            print("Step 4 Complete. Correlations stored and Heatmap generated.")
-        except Exception as e:
-            print(f"Error in Step 4: {e}")
+    if step == 4 or step is None:
+        compute_correlations()
 
-    # Step 5 & 6: Factor Analysis & BIP Visualization
-    elif args.step == 5 or args.step == 6:
-        print("Step 5/6: Generating BIP Map & Factor hierarchy...")
-        from backend.analytics import run_factor_analysis
-        try:
-            run_factor_analysis(study_id=1, n_components=3)
-            print("Step 5/6 Complete. Charts saved to outputs/charts/.")
-        except Exception as e:
-            print(f"Error in Step 5/6: {e}")
-            import traceback
-            traceback.print_exc()
+    # Step 5: Factors
+    if step == 5 or step is None:
+        run_factor_analysis()
 
-    # Step 7: R Path Analysis
-    elif args.step == 7:
-        print("Step 7: Running R Path Analysis...")
-        from backend.modelling import run_r_path_model
-        try:
-            run_r_path_model(study_id=1)
-            print("Step 7 Complete.")
-        except Exception as e:
-            print(f"Error in Step 7: {e}")
+    # Step 6: R Model
+    # if step == 6 or step is None:
+    #    run_r()
 
-    else:
-        print("Step not yet implemented or invalid step.")
+    # Step 9: Outputs
+    if step == 9:
+        write_excel()
+        write_ppt()
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--step", type=int, help="Step to run")
+    parser.add_argument("--file", type=str, help="Path to SPSS file")
+    args = parser.parse_args()
+    
+    run_pipeline(step=args.step, file_path=args.file)
