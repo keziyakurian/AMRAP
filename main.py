@@ -76,6 +76,28 @@ def main():
         except Exception as e:
             print(f"Error in Step 4: {e}")
 
+    # Step 5 & 6: Factor Analysis & BIP Visualization
+    elif args.step == 5 or args.step == 6:
+        print("Step 5/6: Generating BIP Map & Factor hierarchy...")
+        from backend.analytics import run_factor_analysis
+        try:
+            run_factor_analysis(study_id=1, n_components=3)
+            print("Step 5/6 Complete. Charts saved to outputs/charts/.")
+        except Exception as e:
+            print(f"Error in Step 5/6: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # Step 7: R Path Analysis
+    elif args.step == 7:
+        print("Step 7: Running R Path Analysis...")
+        from backend.modelling import run_r_path_model
+        try:
+            run_r_path_model(study_id=1)
+            print("Step 7 Complete.")
+        except Exception as e:
+            print(f"Error in Step 7: {e}")
+
     else:
         print("Step not yet implemented or invalid step.")
 

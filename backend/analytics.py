@@ -64,32 +64,80 @@ def run_correlation_analysis(study_id: int):
 
 def run_factor_analysis(study_id: int, n_components=3):
     """
-    Runs Factor Analysis (PCA or FA) to group metrics.
+    Runs Factor Analysis (PCA or FA) to group metrics and generates BIP Map.
     """
-    from sklearn.decomposition import FactorAnalysis
+    from sklearn.decomposition import FactorAnalysis, PCA
     from .pre_analysis import get_preanalysis_df
     
-    print("Running Factor Analysis...")
+    print("Running Factor Analysis & Visualization...")
     df_pivot = get_preanalysis_df(study_id)
     
     if df_pivot.empty:
+        print("Error: No data available for Factor Analysis.")
         return
         
-    fa = FactorAnalysis(n_components=n_components, random_state=42)
-    # Fill NAs if any with 0 or mean
+    # Data Cleaning: Fill NA
     df_clean = df_pivot.fillna(0)
     
+    # 1. Factor Analysis (for Hierarchy / Groupings)
+    fa = FactorAnalysis(n_components=n_components, random_state=42)
     fa.fit(df_clean)
     
-    # Loadings: rows=components, cols=metrics
     loadings = pd.DataFrame(
         fa.components_,
         columns=df_clean.columns,
         index=[f'Factor_{i+1}' for i in range(n_components)]
     )
     
-    print("Factor Loadings:")
+    print("\nFactor Loadings (Metrics to Factors):")
     print(loadings.T)
-    # Logic to save factors to DB would go here
     
-    return loadings
+    # Save Loadings to CSV (or DB)
+    loadings_path = os.path.join(config.OUTPUT_DIR, f"factor_loadings_{study_id}.csv")
+    loadings.T.to_csv(loadings_path)
+    print(f"Saved Factor Loadings to {loadings_path}")
+
+    # 2. BIP Map (Brand Interaction / Positioning)
+    # Using PCA for 2D visualization of Brands vs Metrics
+    # Biplot: Brands are points, Metrics are vectors (loadings)
+    
+    pca = PCA(n_components=2)
+    pca_result = pca.fit_transform(df_clean) # Shape: (n_brands, 2)
+    
+    # Coordinates of Brands
+    brand_coords = pd.DataFrame(pca_result, columns=['Dim1', 'Dim2'], index=df_clean.index)
+    
+    # Coordinates of Metrics (Loadings * Scalar for scaling)
+    # Allows plotting vectors on same chart
+    metric_coords = pd.DataFrame(pca.components_.T, columns=['Dim1', 'Dim2'], index=df_clean.columns)
+    
+    # Plotting
+    plt.figure(figsize=(12, 10))
+    
+    # Plot Metrics (Vectors)
+    for metric in metric_coords.index:
+        x = metric_coords.loc[metric, 'Dim1']
+        y = metric_coords.loc[metric, 'Dim2']
+        plt.arrow(0, 0, x, y, color='red', alpha=0.5, head_width=0.05)
+        plt.text(x*1.1, y*1.1, str(metric), color='darkred', fontsize=9)
+        
+    # Plot Brands (Points)
+    for brand_id in brand_coords.index:
+        x = brand_coords.loc[brand_id, 'Dim1']
+        y = brand_coords.loc[brand_id, 'Dim2']
+        plt.scatter(x, y, color='blue', s=100)
+        plt.text(x+0.05, y+0.05, f"Brand {brand_id}", color='blue', fontsize=12, fontweight='bold')
+        
+    plt.xlabel(f"Dimension 1 ({pca.explained_variance_ratio_[0]:.1%})")
+    plt.ylabel(f"Dimension 2 ({pca.explained_variance_ratio_[1]:.1%})")
+    plt.title("BIP Map (Brand Positioning)")
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.axhline(0, color='black', linewidth=1)
+    plt.axvline(0, color='black', linewidth=1)
+    
+    bip_path = os.path.join(config.CHARTS_DIR, f"bip_map_{study_id}.png")
+    plt.savefig(bip_path)
+    plt.close()
+    print(f"Saved BIP Map to {bip_path}")
+    
+    return loadings, brand_coords

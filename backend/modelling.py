@@ -2,62 +2,62 @@ import subprocess
 import os
 import pandas as pd
 from .config import config
+from .database import engine
 
-def run_r_path_model(data_csv_path: str, output_csv_path: str):
+def run_r_path_model(study_id: int):
     """
-    Executes the R script for Path Analysis.
-    
-    Args:
-        data_csv_path: Input data for R.
-        output_csv_path: Where R should save the coefficients.
+    Exports data to CSV, triggers R script, and reads back results.
     """
-    r_script = config.R_SCRIPT_PATH
+    print("Step 7: Preparing data for R Path Analysis...")
     
-    if not os.path.exists(r_script):
-        print(f"Error: R script not found at {r_script}")
+    # 1. Export Data to CSV
+    query = "SELECT * FROM responses WHERE study_id = :sid"
+    df = pd.read_sql(query, engine, params={"sid": study_id})
+    
+    if df.empty:
+        print("No data for Path Analysis.")
         return
-        
-    cmd = ["Rscript", r_script, data_csv_path, output_csv_path]
-    
-    print(f"Running R model: {' '.join(cmd)}")
-    try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print("R Output:", result.stdout)
-    except subprocess.CalledProcessError as e:
-        print("R Execution Failed!")
-        print(e.stderr)
-        raise e
 
-def process_modelling_step(study_id: int):
-    """
-    Prepares data, runs R model, and processes results.
-    """
-    # 1. Export Data for R
-    # We might need respondent-level data for SEM, or correlation matrix
-    # Assuming respondent level for this example
-    from .ingestion import SessionLocal, Response
+    # Select only numeric
+    df_numeric = df.select_dtypes(include=['number'])
     
-    db = SessionLocal()
-    # Simplified export: fetching all responses for study
-    # Ideally should be pivoted (Respondents x Metrics)
-    # ignoring for brevity, assuming 'data.csv' exists or logic is implemented
+    input_csv = os.path.join(config.OUTPUT_DIR, f"r_input_{study_id}.csv")
+    output_csv = os.path.join(config.OUTPUT_DIR, f"r_output_paths_{study_id}.csv")
     
-    data_path = os.path.join(config.SAMPLE_DATA_DIR, "model_input.csv")
-    output_path = os.path.join(config.OUTPUT_DIR, "model_results.csv")
+    df_numeric.to_csv(input_csv, index=False)
+    print(f"Data exported to {input_csv}")
     
-    # perform export logic here... 
-    # df.to_csv(data_path)
+    # 2. Run R Script
+    r_script_path = os.path.join(config.BASE_DIR, 'r_models', 'path_model.R')
     
-    # 2. Run R
-    # run_r_path_model(data_path, output_path)
+    # Verify R installation
+    try:
+        subprocess.run(["Rscript", "--version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except FileNotFoundError:
+        print("ERROR: 'Rscript' not found. Please ensure R is installed and in PATH.")
+        return
+
+    print("Executing R script...")
+    cmd = ["Rscript", r_script_path, input_csv, output_csv]
     
-    # 3. Ingest Results
-    if os.path.exists(output_path):
-        results = pd.read_csv(output_path)
-        print("Model Results Loaded:")
-        print(results.head())
-        # Filter weak paths (< 0.1)
-        strong_paths = results[results['est'].abs() > 0.1]
-        print(f"Retained {len(strong_paths)} strong paths.")
+    process = subprocess.run(cmd, capture_output=True, text=True)
+    
+    if process.returncode != 0:
+        print("R Script Failed:")
+        print(process.stderr)
+        return
+    else:
+        print("R Script Success.")
+        print(process.stdout)
         
-    db.close()
+    # 3. Read Results
+    if os.path.exists(output_csv):
+        paths_df = pd.read_csv(output_csv)
+        print("Model Paths (Top 5):")
+        print(paths_df.head())
+        
+        # Save to DB (Optional)
+        # paths_df.to_sql('model_paths', engine, if_exists='append')
+    else:
+        print("Output file not found.")
+
