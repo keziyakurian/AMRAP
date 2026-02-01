@@ -18,34 +18,67 @@ st.title("🚀 AMRAP: Automated Ingestion & Audit")
 col1, col2 = st.columns(2)
 
 with col1:
-    st.header("Step 1: Upload Data")
-    uploaded_file = st.file_uploader("Upload SPSS File (.sav)", type=["sav"])
+    st.header("Step 1: Upload Data & SOW")
     
-    sow_text = st.text_area("Paste Statement of Work (SOW) Requirements", height=200, 
-                            placeholder="Paste the KPIs and Objectives from the SOW here...")
-
+    # 1. SPSS Upload
+    uploaded_file = st.file_uploader("1. Upload SPSS File (.sav)", type=["sav"])
+    
+    # 2. SOW Upload (Docx, PDF, Txt)
+    st.write("2. Provide Statement of Work (SOW)")
+    sow_file = st.file_uploader("Upload SOW (.docx, .pdf, .txt)", type=["docx", "pdf", "txt"])
+    sow_text_area = st.text_area("OR Paste SOW Text", height=150, placeholder="Paste text here if no file...")
+    
     run_btn = st.button("Run Ingestion & Audit", type="primary")
 
-if run_btn and uploaded_file:
-    with st.spinner("Ingesting Data..."):
-        # Save temp file
-        temp_path = os.path.join(config.DATA_PATH, "temp_upload.sav")
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-            
-        # Run Backend Ingestion
-        df = load_spss(temp_path)
-        st.success(f"Ingested {len(df)} rows and {len(df.columns)} columns.")
+def extract_text(file):
+    if file.type == "text/plain":
+        return str(file.read(), "utf-8")
+    elif file.type == "application/pdf":
+        import pypdf
+        pdf = pypdf.PdfReader(file)
+        text = ""
+        for page in pdf.pages:
+            text += page.extract_text() + "\n"
+        return text
+    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        import docx
+        doc = docx.Document(file)
+        return "\n".join([p.text for p in doc.paragraphs])
+    return ""
 
-    with st.spinner("Running AI Audit..."):
-        # Save SOW for backend to pick up (or pass directly if we refactor)
-        # Backend currently reads from 'sample_data/sow.txt', let's overwrite it for this session
-        sow_path = os.path.join(config.DATA_PATH, "sow.txt")
-        with open(sow_path, "w") as f:
-            f.write(sow_text if sow_text else "")
+if run_btn:
+    if not uploaded_file:
+        st.error("Please upload an SPSS file.")
+    else:
+        # Resolve SOW Text
+        final_sow_text = ""
+        if sow_file:
+            try:
+                final_sow_text = extract_text(sow_file)
+                st.info(f"Extracted {len(final_sow_text)} chars from SOW file.")
+            except Exception as e:
+                st.error(f"Error reading SOW file: {e}")
+        elif sow_text_area:
+            final_sow_text = sow_text_area
             
-        # Run Backend Audit
-        run_audit(df)
+        with st.spinner("Ingesting Data..."):
+            # Save temp file
+            temp_path = os.path.join(config.DATA_PATH, "temp_upload.sav")
+            with open(temp_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+                
+            # Run Backend Ingestion
+            df = load_spss(temp_path)
+            st.success(f"Ingested {len(df)} rows and {len(df.columns)} columns.")
+
+        with st.spinner("Running AI Audit..."):
+            # Save SOW for backend
+            sow_path = os.path.join(config.DATA_PATH, "sow.txt")
+            with open(sow_path, "w") as f:
+                f.write(final_sow_text if final_sow_text else "")
+                
+            # Run Backend Audit
+            run_audit(df)
         st.success("Audit Complete!")
         
         # Display Results
